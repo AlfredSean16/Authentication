@@ -3,9 +3,8 @@ package com.metrobank.Authentication.Controller;
 import com.metrobank.Authentication.Dto.*;
 import com.metrobank.Authentication.Service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -18,7 +17,7 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request, HttpServletRequest httpRequest) {
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
         String ipAddress = getClientIpAddress(httpRequest);
         String userAgent = httpRequest.getHeader("User-Agent");
 
@@ -26,15 +25,28 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
+    @PostMapping("/select-otp-preference")
+    public ResponseEntity<AuthResponse> selectOtpPreference(@Valid @RequestBody SelectOtpPreference request) {
+        AuthResponse response = authService.selectOtpPreferenceAndSendOtp(request);
+        return ResponseEntity.ok(response);
+    }
+
     @PostMapping("/verify-otp")
-    public ResponseEntity<AuthResponse> verifyOtp(@RequestBody OtpRequest request) {
+    public ResponseEntity<AuthResponse> verifyOtp(@Valid @RequestBody OtpRequest request) {
         AuthResponse response = authService.verifyOtp(request);
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/change-password")
-    public ResponseEntity<AuthResponse> changePassword(@RequestBody PasswordChangeRequest request) {
+    public ResponseEntity<AuthResponse> changePassword(@Valid @RequestBody PasswordChangeRequest request) {
         AuthResponse response = authService.changePassword(request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/resend-otp")
+    public ResponseEntity<AuthResponse> resendOtp(@RequestBody OtpRequest request) {
+        // Just need username for resend
+        AuthResponse response = authService.resendOtp(request.getUsername());
         return ResponseEntity.ok(response);
     }
 

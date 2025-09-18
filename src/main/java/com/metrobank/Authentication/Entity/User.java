@@ -72,6 +72,14 @@ public class User implements UserDetails {
     @Builder.Default
     private int failedLoginAttempts = 0;
 
+    //New fields for cooldown management
+    private LocalDateTime lockoutEndTime;
+
+    @Builder.Default
+    private int failedOtpAttempts = 0;
+
+    private LocalDateTime otpCooldownEndTime;
+
     @CreatedDate
     @Column(updatable = false)
     private LocalDateTime createdAt;
@@ -82,5 +90,40 @@ public class User implements UserDetails {
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
+    }
+
+    //Helper methods for account locking
+    public boolean isLoginCooldownActive() {
+        return lockoutEndTime != null && LocalDateTime.now().isBefore(lockoutEndTime);
+    }
+
+    public boolean isOtpCooldownActive() {
+        return otpCooldownEndTime != null && LocalDateTime.now().isBefore(otpCooldownEndTime);
+    }
+
+    public void lockAccount() {
+        this.isAccountLocked = true;
+        this.lockoutEndTime = LocalDateTime.now().plusDays(1); // 1 day cooldown
+    }
+
+    public void unlockAccount() {
+        this.isAccountLocked = false;
+        this.lockoutEndTime = null;
+        this.failedLoginAttempts = 0;
+    }
+
+    public void setOtpCooldown() {
+        this.otpCooldownEndTime = LocalDateTime.now().plusMinutes(30); // 30 minute cooldown
+        this.failedOtpAttempts = 0;
+    }
+
+    public void clearOtpCooldown() {
+        this.otpCooldownEndTime = null;
+        this.failedOtpAttempts = 0;
+    }
+
+    // Check if password is default
+    public boolean hasDefaultPassword() {
+        return password != null && (password.contains("DefaultPassword123"));
     }
 }
