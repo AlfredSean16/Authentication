@@ -25,7 +25,7 @@ import java.util.List;
 public class User implements UserDetails {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    private long user_id;
 
     @NotBlank(message = "Name is required")
     @Size(max = 100, message = "Name must not exceed 100 characters")
@@ -38,10 +38,6 @@ public class User implements UserDetails {
     private String username;
 
     @NotBlank(message = "Password is required")
-    @Pattern(
-            regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]{8,}$",
-            message = "Password must be at least 8 characters long, contain one uppercase, one lowercase, one number, and one special character"
-    )
     @Column(nullable = false)
     private String password;
 
@@ -63,8 +59,17 @@ public class User implements UserDetails {
     @Column(nullable = false)
     private Role role;
 
-    @Enumerated(EnumType.STRING)
-    private OtpPreference otpPreference;
+    // TOTP-related fields
+    @Column(name = "totp_secret")
+    private String totpSecret;
+
+    @Builder.Default
+    @Column(name = "totp_enabled")
+    private boolean totpEnabled = false;
+
+    @Builder.Default
+    @Column(name = "totp_setup_required")
+    private boolean totpSetupRequired = true;
 
     @Builder.Default
     private boolean isAccountLocked = false;
@@ -72,13 +77,13 @@ public class User implements UserDetails {
     @Builder.Default
     private int failedLoginAttempts = 0;
 
-    //New fields for cooldown management
+    // Fields for cooldown management
     private LocalDateTime lockoutEndTime;
 
     @Builder.Default
-    private int failedOtpAttempts = 0;
+    private int failedTotpAttempts = 0;
 
-    private LocalDateTime otpCooldownEndTime;
+    private LocalDateTime totpCooldownEndTime;
 
     @CreatedDate
     @Column(updatable = false)
@@ -92,13 +97,13 @@ public class User implements UserDetails {
         return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
     }
 
-    //Helper methods for account locking
+    // Helper methods for account locking
     public boolean isLoginCooldownActive() {
         return lockoutEndTime != null && LocalDateTime.now().isBefore(lockoutEndTime);
     }
 
-    public boolean isOtpCooldownActive() {
-        return otpCooldownEndTime != null && LocalDateTime.now().isBefore(otpCooldownEndTime);
+    public boolean isTotpCooldownActive() {
+        return totpCooldownEndTime != null && LocalDateTime.now().isBefore(totpCooldownEndTime);
     }
 
     public void lockAccount() {
@@ -112,18 +117,28 @@ public class User implements UserDetails {
         this.failedLoginAttempts = 0;
     }
 
-    public void setOtpCooldown() {
-        this.otpCooldownEndTime = LocalDateTime.now().plusMinutes(30); // 30 minute cooldown
-        this.failedOtpAttempts = 0;
+    public void setTotpCooldown() {
+        this.totpCooldownEndTime = LocalDateTime.now().plusMinutes(30); // 30 minute cooldown
+        this.failedTotpAttempts = 0;
     }
 
-    public void clearOtpCooldown() {
-        this.otpCooldownEndTime = null;
-        this.failedOtpAttempts = 0;
+    public void clearTotpCooldown() {
+        this.totpCooldownEndTime = null;
+        this.failedTotpAttempts = 0;
     }
 
     // Check if password is default
     public boolean hasDefaultPassword() {
         return password != null && (password.contains("DefaultPassword123"));
+    }
+
+    // TOTP-related helper methods
+    public boolean requiresTotpSetup() {
+        return totpSetupRequired && !totpEnabled;
+    }
+
+    public void completeTotpSetup() {
+        this.totpSetupRequired = false;
+        this.totpEnabled = true;
     }
 }

@@ -12,26 +12,30 @@ import java.time.LocalDateTime;
 public class AuthResponse {
     private String token;
     private String message;
-    private boolean requiresOtp;
+    private boolean requiresTotp;
     private boolean requiresPasswordChange;
-    private boolean requiresOtpPreference;
+    private boolean requiresTotpSetup;
+    private Long user_id;
     private String role;
     private String redirectUrl;
     private LocalDateTime cooldownEndTime;
     private int remainingAttempts;
 
+    // For TOTP setup
+    private TotpSetupResponse totpSetup;
+
     // Custom constructor for common use case
     @Tolerate
-    public AuthResponse(String message, boolean requiresOtp, boolean requiresPasswordChange) {
+    public AuthResponse(String message, boolean requiresTotp, boolean requiresPasswordChange) {
         this.message = message;
-        this.requiresOtp = requiresOtp;
+        this.requiresTotp = requiresTotp;
         this.requiresPasswordChange = requiresPasswordChange;
     }
 
     @Tolerate
-    public AuthResponse(String message, boolean requiresOtpPreference) {
+    public AuthResponse(String message, boolean requiresTotpSetup) {
         this.message = message;
-        this.requiresOtpPreference = requiresOtpPreference;
+        this.requiresTotpSetup = requiresTotpSetup;
     }
 
     // Constructor with cooldown info
@@ -40,5 +44,13 @@ public class AuthResponse {
         this.message = message;
         this.cooldownEndTime = cooldownEndTime;
         this.remainingAttempts = remainingAttempts;
+    }
+
+    // Constructor for TOTP setup
+    @Tolerate
+    public AuthResponse(String message, TotpSetupResponse totpSetup) {
+        this.message = message;
+        this.requiresTotpSetup = true;
+        this.totpSetup = totpSetup;
     }
 }

@@ -1,5 +1,4 @@
 package com.metrobank.Authentication.Dto;
-
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -10,12 +9,12 @@ import lombok.*;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class OtpRequest {
+public class TotpRequest {
     @NotNull(message = "Username is required")
     private String username;
 
-    @NotBlank(message = "OTP code cannot be blank")
-    @Size(min = 6, max = 6, message = "OTP code must be exactly 6 digits")
-    @Pattern(regexp = "\\d{6}", message = "OTP code must contain only numbers")
-    private String otpCode;
+    @NotBlank(message = "TOTP code cannot be blank")
+    @Size(min = 6, max = 6, message = "TOTP code must be exactly 6 digits")
+    @Pattern(regexp = "\\d{6}", message = "TOTP code must contain only numbers")
+    private String totpCode;
 }

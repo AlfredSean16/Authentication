@@ -25,15 +25,9 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
-    @PostMapping("/select-otp-preference")
-    public ResponseEntity<AuthResponse> selectOtpPreference(@Valid @RequestBody SelectOtpPreference request) {
-        AuthResponse response = authService.selectOtpPreferenceAndSendOtp(request);
-        return ResponseEntity.ok(response);
-    }
-
-    @PostMapping("/verify-otp")
-    public ResponseEntity<AuthResponse> verifyOtp(@Valid @RequestBody OtpRequest request) {
-        AuthResponse response = authService.verifyOtp(request);
+    @PostMapping("/verify-totp")
+    public ResponseEntity<AuthResponse> verifyTotp(@Valid @RequestBody TotpRequest request) {
+        AuthResponse response = authService.verifyTotp(request);
         return ResponseEntity.ok(response);
     }
 
@@ -43,10 +37,15 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
-    @PostMapping("/resend-otp")
-    public ResponseEntity<AuthResponse> resendOtp(@RequestBody OtpRequest request) {
-        // Just need username for resend
-        AuthResponse response = authService.resendOtp(request.getUsername());
+    @GetMapping("/totp-setup/{username}")
+    public ResponseEntity<AuthResponse> getTotpSetup(@PathVariable String username) {
+        AuthResponse response = authService.getTotpSetup(username);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/reset-totp")
+    public ResponseEntity<AuthResponse> resetTotpSecret(@RequestParam String username) {
+        AuthResponse response = authService.resetTotpSecret(username);
         return ResponseEntity.ok(response);
     }
 

@@ -1,4 +1,5 @@
 package com.metrobank.Authentication.Service;
+import com.metrobank.Authentication.Entity.User;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
@@ -43,10 +44,20 @@ public class JwtService {
     }
 
     /**
-     * Generate JWT token for user
+     * Generate JWT token for user with role information
      */
     public String generateToken(UserDetails userDetails) {
-        return generateToken(new HashMap<>(), userDetails);
+        Map<String, Object> extraClaims = new HashMap<>();
+
+        // Add role information to token if user is instance of our User entity
+        if (userDetails instanceof User) {
+            User user = (User) userDetails;
+            extraClaims.put("role", user.getRole().name());
+            extraClaims.put("userId", user.getUser_id());
+            extraClaims.put("email", user.getEmail());
+        }
+
+        return generateToken(extraClaims, userDetails);
     }
 
     /**

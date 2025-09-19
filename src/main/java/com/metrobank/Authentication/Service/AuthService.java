@@ -1,5 +1,6 @@
 package com.metrobank.Authentication.Service;
 
+import com.google.zxing.WriterException;
 import com.metrobank.Authentication.Dto.*;
 import com.metrobank.Authentication.Entity.LoginAttempt;
 import com.metrobank.Authentication.Entity.Role;
@@ -11,6 +12,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
@@ -18,19 +20,19 @@ import java.util.Optional;
 public class AuthService {
     private final UserRepository userRepository;
     private final LoginAttemptRepository loginAttemptRepository;
-    private final OtpService otpService;
+    private final TotpService totpService;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
 
     private static final int MAX_LOGIN_ATTEMPTS = 3;
-    private static final int MAX_OTP_ATTEMPTS = 3;
+    private static final int MAX_TOTP_ATTEMPTS = 3;
 
     @Autowired
     public AuthService(UserRepository userRepository, LoginAttemptRepository loginAttemptRepository,
-                       OtpService otpService, PasswordEncoder passwordEncoder, JwtService jwtService) {
+                       TotpService totpService, PasswordEncoder passwordEncoder, JwtService jwtService) {
         this.userRepository = userRepository;
         this.loginAttemptRepository = loginAttemptRepository;
-        this.otpService = otpService;
+        this.totpService = totpService;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
     }
@@ -69,25 +71,44 @@ public class AuthService {
 
         logLoginAttempt(user, ipAddress, userAgent, true, null);
 
-        // Check if user has OTP preference set
-        if (user.getOtpPreference() == null) {
-            return new AuthResponse("Please select your preferred OTP method", true);
+        // Check if user needs TOTP setup
+        if (totpService.requiresTotpSetup(user)) {
+            try {
+                return setupTotpForUser(user);
+            } catch (Exception e) {
+                return new AuthResponse("Error setting up TOTP. Please try again.", false, false);
+            }
         }
 
-        // Check OTP cooldown
-        if (user.isOtpCooldownActive()) {
-            return new AuthResponse("OTP attempts exceeded. Please try again later.",
-                    user.getOtpCooldownEndTime(), 0);
+        // Check TOTP cooldown
+        if (user.isTotpCooldownActive()) {
+            return new AuthResponse("TOTP attempts exceeded. Please try again later.",
+                    user.getTotpCooldownEndTime(), 0);
         }
 
-        // Send OTP
-        otpService.sendOtp(user);
-        return new AuthResponse("OTP sent to your " + user.getOtpPreference().toString().toLowerCase(),
-                true, false);
+        // Request TOTP verification
+        return new AuthResponse("Please enter your Google Authenticator code", true, false);
     }
 
     @Transactional
-    public AuthResponse selectOtpPreferenceAndSendOtp(SelectOtpPreference request) {
+    public AuthResponse setupTotpForUser(User user) throws WriterException, IOException {
+        String secret = totpService.generateTotpSecret(user);
+        String qrCodeUrl = totpService.generateQrCodeUrl(user);
+        String qrCodeImage = totpService.generateQrCodeImage(user);
+
+        TotpSetupResponse totpSetup = new TotpSetupResponse(
+                secret,
+                qrCodeUrl,
+                qrCodeImage,
+                "MetroBank eITR",
+                user.getUsername() + " (" + user.getName() + ")"
+        );
+
+        return new AuthResponse("TOTP setup required. Please scan the QR code with Google Authenticator.", totpSetup);
+    }
+
+    @Transactional
+    public AuthResponse verifyTotp(TotpRequest request) {
         Optional<User> userOpt = userRepository.findByUsername(request.getUsername());
 
         if (userOpt.isEmpty()) {
@@ -96,58 +117,32 @@ public class AuthService {
 
         User user = userOpt.get();
 
-        // Check OTP cooldown
-        if (user.isOtpCooldownActive()) {
-            return new AuthResponse("OTP attempts exceeded. Please try again later.",
-                    user.getOtpCooldownEndTime(), 0);
+        // Check TOTP cooldown
+        if (user.isTotpCooldownActive()) {
+            return new AuthResponse("TOTP verification is temporarily disabled. Please try again later.",
+                    user.getTotpCooldownEndTime(), 0);
         }
 
-        // Update OTP preference
-        user.setOtpPreference(request.getOtpPreference());
-        userRepository.save(user);
+        boolean totpValid = totpService.verifyTotpCode(user, request.getTotpCode());
 
-        // Send OTP
-        otpService.sendOtp(user);
-        return new AuthResponse("OTP sent to your " + user.getOtpPreference().toString().toLowerCase(),
-                true, false);
-    }
+        if (!totpValid) {
+            user.setFailedTotpAttempts(user.getFailedTotpAttempts() + 1);
 
-    @Transactional
-    public AuthResponse verifyOtp(OtpRequest request) {
-        Optional<User> userOpt = userRepository.findByUsername(request.getUsername());
-
-        if (userOpt.isEmpty()) {
-            return new AuthResponse("User not found", false, false);
-        }
-
-        User user = userOpt.get();
-
-        // Check OTP cooldown
-        if (user.isOtpCooldownActive()) {
-            return new AuthResponse("OTP verification is temporarily disabled. Please try again later.",
-                    user.getOtpCooldownEndTime(), 0);
-        }
-
-        boolean otpValid = otpService.verifyOtp(user, request.getOtpCode());
-
-        if (!otpValid) {
-            user.setFailedOtpAttempts(user.getFailedOtpAttempts() + 1);
-
-            if (user.getFailedOtpAttempts() >= MAX_OTP_ATTEMPTS) {
-                user.setOtpCooldown();
+            if (user.getFailedTotpAttempts() >= MAX_TOTP_ATTEMPTS) {
+                user.setTotpCooldown();
                 userRepository.save(user);
-                return new AuthResponse("Maximum OTP attempts reached. Please try again in 30 minutes.",
-                        user.getOtpCooldownEndTime(), 0);
+                return new AuthResponse("Maximum TOTP attempts reached. Please try again in 30 minutes.",
+                        user.getTotpCooldownEndTime(), 0);
             }
 
             userRepository.save(user);
-            int remainingAttempts = MAX_OTP_ATTEMPTS - user.getFailedOtpAttempts();
-            return new AuthResponse("Invalid or expired OTP. " + remainingAttempts + " attempts remaining.",
+            int remainingAttempts = MAX_TOTP_ATTEMPTS - user.getFailedTotpAttempts();
+            return new AuthResponse("Invalid TOTP code. " + remainingAttempts + " attempts remaining.",
                     null, remainingAttempts);
         }
 
-        // Clear OTP attempts on successful verification
-        user.clearOtpCooldown();
+        // Clear TOTP attempts on successful verification
+        user.clearTotpCooldown();
         userRepository.save(user);
 
         // Check if password change is required (using BCrypt encoded check)
@@ -174,7 +169,7 @@ public class AuthService {
     }
 
     @Transactional
-    public AuthResponse resendOtp(String username) {
+    public AuthResponse getTotpSetup(String username) {
         Optional<User> userOpt = userRepository.findByUsername(username);
 
         if (userOpt.isEmpty()) {
@@ -183,19 +178,44 @@ public class AuthService {
 
         User user = userOpt.get();
 
-        // Check OTP cooldown
-        if (user.isOtpCooldownActive()) {
-            return new AuthResponse("OTP resend is temporarily disabled. Please try again later.",
-                    user.getOtpCooldownEndTime(), 0);
+        if (!totpService.requiresTotpSetup(user)) {
+            return new AuthResponse("TOTP is already set up for this user", false, false);
         }
 
-        if (user.getOtpPreference() == null) {
-            return new AuthResponse("Please select your preferred OTP method first", true);
+        try {
+            return setupTotpForUser(user);
+        } catch (Exception e) {
+            return new AuthResponse("Error generating TOTP setup. Please try again.", false, false);
+        }
+    }
+
+    @Transactional
+    public AuthResponse resetTotpSecret(String username) {
+        Optional<User> userOpt = userRepository.findByUsername(username);
+
+        if (userOpt.isEmpty()) {
+            return new AuthResponse("User not found", false, false);
         }
 
-        otpService.sendOtp(user);
-        return new AuthResponse("OTP resent to your " + user.getOtpPreference().toString().toLowerCase(),
-                true, false);
+        User user = userOpt.get();
+
+        try {
+            String newSecret = totpService.resetTotpSecret(user);
+            String qrCodeUrl = totpService.generateQrCodeUrl(user);
+            String qrCodeImage = totpService.generateQrCodeImage(user);
+
+            TotpSetupResponse totpSetup = new TotpSetupResponse(
+                    newSecret,
+                    qrCodeUrl,
+                    qrCodeImage,
+                    "MetroBank eITR",
+                    user.getUsername() + " (" + user.getName() + ")"
+            );
+
+            return new AuthResponse("TOTP secret has been reset. Please scan the new QR code.", totpSetup);
+        } catch (Exception e) {
+            return new AuthResponse("Error resetting TOTP secret. Please try again.", false, false);
+        }
     }
 
     private AuthResponse handleFailedLogin(User user, String ipAddress, String userAgent) {
@@ -234,6 +254,7 @@ public class AuthService {
 
         AuthResponse response = new AuthResponse(message, false, false);
         response.setToken(token);
+        response.setUser_id(user.getUser_id());
         response.setRole(user.getRole().toString());
         response.setRedirectUrl(redirectUrl);
         return response;
